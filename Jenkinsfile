@@ -36,7 +36,7 @@ pipeline { // Opening pipeline
         } // Closing mvn build stage
         stage('SonarCloud') {
         steps {
-            withSonarQubeEnv('sonarqube') {
+            withSonarQubeEnv('sonar') {
                 sh '''${SCANNER_HOME}/bin/sonar-scanner \
                     -Dsonar.projectKey=Ncodeit \
                     -Dsonar.projectName=Ncodeit \
