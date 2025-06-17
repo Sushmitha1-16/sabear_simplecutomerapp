@@ -1,0 +1,84 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'BRANCH', defaultValue: 'master', description: 'Git branch to build') 
+        booleanParam(name: 'mvn_build', defaultValue: true, description: 'Run Maven Build?')
+        booleanParam(name: 'publish_to_nexus', defaultValue: true, description: 'Publish to Nexus?')
+        booleanParam(name: 'run_sonar', defaultValue: true, description: 'Run SonarQube Analysis?')
+    }
+
+    tools {
+        maven 'Maven_3.9.4' // Make sure this matches your Jenkins Maven tool name
+    }
+
+    environment {
+        NEXUS_VERSION = "nexus3"
+        NEXUS_PROTOCOL = "http"
+        NEXUS_URL = "13.218.210.63:8081"
+        NEXUS_REPOSITORY = "Nexus_repo" // Update if you're pushing to a different repo
+        NEXUS_CREDENTIAL_ID = "Nexus_server"
+    }
+
+    stages {
+
+        stage("Clone Code") {
+            steps {
+                git branch: "${params.BRANCH}", url: 'https://github.com/sripriya7-ande/spring3-mvc-maven-xml-hello-world-1.git'
+            }
+        }
+
+        stage("Maven Build") {
+            when {
+                expression { return params.mvn_build }
+            }
+            steps {
+                sh 'mvn -Dmaven.test.failure.ignore=true clean package'
+            }
+        }
+
+        stage("SonarQube Analysis") {
+            when {
+                expression { return params.run_sonar }
+            }
+            steps {
+                withSonarQubeEnv('sonarqube') { // Must match Jenkins Global Tool Configuration
+                    sh 'mvn sonar:sonar'
+                }
+            }
+        }
+
+        stage("Publish to Nexus") {
+            when {
+                expression { return params.publish_to_nexus }
+            }
+            steps {
+                script {
+                    def pom = readMavenPom file: 'pom.xml'
+                    def filesByGlob = findFiles(glob: "target/*.${pom.packaging}")
+                    
+                    if (filesByGlob.length > 0) {
+                        def artifactPath = filesByGlob[0].path
+                        echo "Found artifact: ${artifactPath}"
+
+                        nexusArtifactUploader(
+                            nexusVersion: env.NEXUS_VERSION,
+                            protocol: env.NEXUS_PROTOCOL,
+                            nexusUrl: env.NEXUS_URL,
+                            groupId: pom.groupId,
+                            version: "${BUILD_NUMBER}",
+                            repository: env.NEXUS_REPOSITORY,
+                            credentialsId: env.NEXUS_CREDENTIAL_ID,
+                            artifacts: [
+                                [artifactId: pom.artifactId, classifier: '', file: artifactPath, type: pom.packaging],
+                                [artifactId: pom.artifactId, classifier: '', file: 'pom.xml', type: 'pom']
+                            ]
+                        )
+                    } else {
+                        error "Artifact not found in target directory!"
+                    }
+                }
+            }
+        }
+    }
+}
